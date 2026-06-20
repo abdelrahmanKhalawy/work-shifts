@@ -8,6 +8,8 @@
     />
     <title>توزيع الورديات</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <style>
       :root {
         --pc-bg: #e3edfa;
@@ -266,8 +268,10 @@
         align-items: center;
         justify-content: center;
         color: var(--muted);
-        font-size: 12.5px;
+        font-size: 11px;
         flex: 1;
+        text-align: center;
+        line-height: 1.3;
       }
 
       /* modal */
@@ -523,6 +527,8 @@
       let day = null; // {hours, names:{pc:[],ninja:[],fatesh:[]}}
       let activeSlot = null; // {sectionKey, index}
       let saveTimer = null;
+      let unsubscribeDay = null; // دالة إلغاء متابعة اليوم الحالي
+      let isSavingLocally = false; // نتجنب لوب لما نحفظ ونرجع نستقبل نفس البيانات
 
       function todayStr() {
         const d = new Date();
@@ -565,18 +571,93 @@
         return local.toISOString().slice(0, 10);
       }
 
+      // ====== Firebase config ======
+      // حط هنا الـ config اللي هتاخده من Firebase Console
+      const firebaseConfig = {
+        apiKey: "AIzaSyAdvtb6uOt-u6eRm8QY_RakC9s-KfxE5Gs",
+        authDomain: "work-shifts-b2ba6.firebaseapp.com",
+        projectId: "work-shifts-b2ba6",
+        storageBucket: "work-shifts-b2ba6.firebasestorage.app",
+        messagingSenderId: "902007636990",
+        appId: "1:902007636990:web:f379e7865c108c809536af",
+      };
+
+      let db = null;
+      let firebaseReady = false;
+      try {
+        if (
+          firebaseConfig.apiKey &&
+          firebaseConfig.apiKey !== "PASTE_API_KEY_HERE"
+        ) {
+          firebase.initializeApp(firebaseConfig);
+          db = firebase.firestore();
+          firebaseReady = true;
+        }
+      } catch (e) {
+        console.warn(
+          "Firebase init failed, falling back to local storage only:",
+          e,
+        );
+      }
+
+      const COLLECTION = "shift-app";
+
       async function storageGet(key, fallback) {
+        // أولاً نجرب نقرأ من Firestore لو متصل
+        if (firebaseReady) {
+          try {
+            const doc = await db.collection(COLLECTION).doc(key).get();
+            if (doc.exists) {
+              const value = doc.data().value;
+              localStorage.setItem("shift-app:" + key, JSON.stringify(value)); // ناخد نسخة محلية احتياطية
+              return value;
+            }
+          } catch (e) {
+            console.warn("Firestore get failed, using local cache:", e);
+          }
+        }
+        // لو مفيش فايربيز أو فشل، نرجع للنسخة المحلية
         try {
-          const r = await window.storage.get(key);
-          return r ? JSON.parse(r.value) : fallback;
+          const v = localStorage.getItem("shift-app:" + key);
+          return v !== null ? JSON.parse(v) : fallback;
         } catch (e) {
           return fallback;
         }
       }
+
       async function storageSet(key, value) {
+        // نحفظ محليًا فورًا (شغال حتى أوفلاين)
         try {
-          await window.storage.set(key, JSON.stringify(value));
+          localStorage.setItem("shift-app:" + key, JSON.stringify(value));
         } catch (e) {}
+        // ونحاول نحفظ في Firestore عشان يتشارك مع باقي الأجهزة
+        if (firebaseReady) {
+          try {
+            await db
+              .collection(COLLECTION)
+              .doc(key)
+              .set({ value, updatedAt: Date.now() });
+          } catch (e) {
+            console.warn("Firestore save failed, saved locally only:", e);
+          }
+        }
+      }
+
+      function watchKey(key, onChange) {
+        if (!firebaseReady) return () => {};
+        return db
+          .collection(COLLECTION)
+          .doc(key)
+          .onSnapshot(
+            (doc) => {
+              if (doc.exists) {
+                const value = doc.data().value;
+                localStorage.setItem("shift-app:" + key, JSON.stringify(value));
+                onChange(value);
+              }
+            },
+            (err) => console.warn("Firestore listener error:", err),
+          );
       }
 
       function emptyDay() {
@@ -597,10 +678,27 @@
           ...DEFAULT_COUNTS,
         };
         await loadDay(currentDate);
+
+        document.getElementById("saveStatus").textContent = firebaseReady
+          ? "متصل ✓ (مشترك بين الأجهزة)"
+          : "محفوظ محليًا فقط ⚠";
+
+        // لما حد يعدل الأسماء من جهاز تاني، نحدث القايمة هنا تلقائيًا
+        watchKey("master-names", (value) => {
+          masterNames = value;
+          render();
+        });
+        watchKey("slot-counts", (value) => {
+          slotCounts = value;
+        });
       }
 
       async function loadDay(dateStr) {
         currentDate = dateStr;
+        if (unsubscribeDay) {
+          unsubscribeDay();
+          unsubscribeDay = null;
+        }
         let d = await storageGet("day:" + dateStr, null);
         if (!d) {
           d = emptyDay();
@@ -616,13 +714,27 @@
         }
         day = d;
         render();
+
+        // نتابع تحديثات اليوم ده لحظيًا من أي جهاز تاني
+        unsubscribeDay = watchKey("day:" + dateStr, (value) => {
+          if (isSavingLocally) return; // ده تحديثنا احنا، متجاهله عشان منكررش render
+          if (dateStr !== currentDate) return; // المستخدم غيّر اليوم بالفعل
+          day = value;
+          render();
+        });
       }
 
       async function saveDay() {
         document.getElementById("saveStatus").textContent = "جارٍ الحفظ...";
+        isSavingLocally = true;
         await storageSet("day:" + currentDate, day);
         await storageSet("slot-counts", slotCounts);
-        document.getElementById("saveStatus").textContent = "محفوظ ✓";
+        setTimeout(() => {
+          isSavingLocally = false;
+        }, 600); // وقت كافي لرجوع الـ snapshot بتاعنا
+        document.getElementById("saveStatus").textContent = firebaseReady
+          ? "متصل ✓ (مشترك بين الأجهزة)"
+          : "محفوظ محليًا فقط ⚠";
       }
       function queueSave() {
         clearTimeout(saveTimer);
