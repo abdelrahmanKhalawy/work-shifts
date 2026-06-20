@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>توزيع الورديات</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  :root{
+    --pc-bg:#dce8f5; --pc-bd:#9cc0e0;
+    --ninja-bg:#fbe3d4; --ninja-bd:#e6a878;
+    --fatesh-bg:#fff4b8; --fatesh-bd:#e0c95a;
+    --ink:#1f2733; --muted:#6b7682; --paper:#f6f5f1;
+    --accent:#2c6e8f; --danger:#c1483c; --line:#dadcd6;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Tahoma","Segoe UI",Arial,sans-serif; padding-bottom:40px;}
+  header{position:sticky; top:0; z-index:5; background:var(--accent); color:#fff;
+    padding:14px 16px 12px; box-shadow:0 2px 6px rgba(0,0,0,.15);}
+  header h1{margin:0 0 10px; font-size:19px; font-weight:700; text-align:center;}
+
+  .daterow{display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px;}
+  .daterow button{background:rgba(255,255,255,.18); border:none; color:#fff; font-size:20px;
+    width:42px; height:42px; border-radius:10px;}
+  .daterow .datebox{flex:1; max-width:230px; text-align:center; background:rgba(255,255,255,.14);
+    border-radius:10px; padding:9px 6px; font-size:15px; font-weight:600; position:relative;}
+  .daterow input[type=date]{position:absolute; inset:0; opacity:0; width:100%; height:100%;}
+
+  .hoursrow{display:flex; gap:8px; justify-content:center;}
+  .hourbtn{flex:1; max-width:140px; padding:10px 0; border-radius:10px; border:2px solid rgba(255,255,255,.5);
+    background:transparent; color:#fff; font-size:15px; font-weight:700;}
+  .hourbtn.active{background:#fff; color:var(--accent); border-color:#fff;}
+
+  #warnbar{display:none; background:#fce8e6; color:var(--danger); border-bottom:2px solid #f0b4ac;
+    padding:9px 14px; font-size:13.5px; font-weight:700; text-align:center;}
+
+  main{padding:14px 12px 0;}
+  .section{margin-bottom:18px; border-radius:14px; overflow:hidden; border:1px solid var(--line);
+    background:#fff;}
+  .sec-head{display:flex; align-items:center; justify-content:space-between; padding:11px 14px;}
+  .sec-head .name{font-size:16px; font-weight:800;}
+  .sec-head .count{font-size:12.5px; color:var(--ink); opacity:.65;}
+  .sec.pc .sec-head{background:var(--pc-bg); border-bottom:1px solid var(--pc-bd);}
+  .sec.ninja .sec-head{background:var(--ninja-bg); border-bottom:1px solid var(--ninja-bd);}
+  .sec.fatesh .sec-head{background:var(--fatesh-bg); border-bottom:1px solid var(--fatesh-bd);}
+
+  .slot{display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #eee;}
+  .slot:last-child{border-bottom:none;}
+  .slot .num{width:26px; text-align:center; font-weight:700; color:var(--muted); font-size:14px; flex-shrink:0;}
+  .slot .nameBtn{flex:1; text-align:right; background:#f2f1ec; border:1.5px dashed #c7c4ba;
+    border-radius:10px; padding:13px 12px; font-size:15.5px; color:var(--muted); min-height:46px;
+    display:flex; align-items:center;}
+  .slot .nameBtn.filled{background:#eef6ee; border:1.5px solid #b9d9b6; color:var(--ink); font-weight:700;}
+  .slot .nameBtn.dup{background:#fdeceb; border:1.5px solid var(--danger); color:var(--danger);}
+  .slot .del{width:36px; height:36px; flex-shrink:0; border:none; background:none; color:#b7b2a6;
+    font-size:18px;}
+
+  .addrow{padding:10px 14px 14px;}
+  .addBtn{width:100%; padding:12px; border-radius:10px; border:1.5px dashed #b9c3cc; background:#fafbfc;
+    color:var(--accent); font-weight:700; font-size:14.5px;}
+
+  footer{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
+    padding:10px 12px; display:flex; gap:10px; z-index:5;}
+  footer button{flex:1; padding:13px; border-radius:11px; border:none; font-size:14.5px; font-weight:700;}
+  #manageBtn{background:#eef0ec; color:var(--ink);}
+  #saveStatus{display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12.5px; flex:1;}
+
+  /* modal */
+  .overlay{position:fixed; inset:0; background:rgba(20,24,28,.5); display:none; z-index:20;
+    align-items:flex-end;}
+  .sheet{background:#fff; width:100%; max-height:82vh; border-radius:18px 18px 0 0; display:flex;
+    flex-direction:column; overflow:hidden;}
+  .sheet-head{padding:14px 16px 10px; border-bottom:1px solid var(--line); display:flex;
+    align-items:center; justify-content:space-between;}
+  .sheet-head .t{font-weight:800; font-size:16px;}
+  .sheet-head .close{background:#f0f0ec; border:none; border-radius:50%; width:34px; height:34px; font-size:16px;}
+  .searchBox{padding:10px 14px;}
+  .searchBox input{width:100%; padding:12px 14px; border-radius:11px; border:1.5px solid var(--line);
+    font-size:15px; background:#f7f7f4;}
+  .nameList{overflow-y:auto; padding:4px 10px 14px;}
+  .nameRow{padding:14px 12px; border-radius:10px; font-size:15.5px; font-weight:600; margin-bottom:6px;
+    background:#f6f5f1; display:flex; justify-content:space-between; align-items:center;}
+  .nameRow.taken{opacity:.5;}
+  .nameRow .tag{font-size:11px; color:var(--muted); font-weight:600;}
+  .clearRow{background:#fdeceb; color:var(--danger); font-weight:700; text-align:center;}
+  .empty-hint{padding:18px; text-align:center; color:var(--muted); font-size:13.5px;}
+
+  /* manage names modal reused structure */
+  .mgmtAdd{display:flex; gap:8px; padding:10px 14px 14px; border-top:1px solid var(--line);}
+  .mgmtAdd input{flex:1; padding:12px; border-radius:10px; border:1.5px solid var(--line); font-size:15px;}
+  .mgmtAdd button{padding:0 18px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-weight:700;}
+  .mgmtRow{display:flex; align-items:center; justify-content:space-between; padding:13px 12px;
+    border-radius:10px; background:#f6f5f1; margin-bottom:6px; font-size:15px; font-weight:600;}
+  .mgmtRow button{background:none; border:none; color:var(--danger); font-size:18px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>توزيع الورديات</h1>
+  <div class="daterow">
+    <button id="prevDay">‹</button>
+    <div class="datebox" id="dateLabel">--
+      <input type="date" id="dateInput">
+    </div>
+    <button id="nextDay">›</button>
+  </div>
+  <div class="hoursrow">
+    <button class="hourbtn" data-h="8">شفت 8 ساعات</button>
+    <button class="hourbtn" data-h="12">شفت 12 ساعة</button>
+  </div>
+</header>
+
+<div id="warnbar"></div>
+
+<main id="sections"></main>
+
+<div style="height:70px"></div>
+
+<footer>
+  <button id="manageBtn">✎ تعديل الأسماء</button>
+  <button id="exportBtn" style="background:#1f7a4d;color:#fff;">⬇ تصدير إكسل</button>
+  <div id="saveStatus">محفوظ ✓</div>
+</footer>
+
+<!-- name picker -->
+<div class="overlay" id="pickerOverlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div class="t" id="pickerTitle">اختار الاسم</div>
+      <button class="close" id="pickerClose">✕</button>
+    </div>
+    <div class="searchBox"><input id="pickerSearch" placeholder="ابحث عن اسم..."></div>
+    <div class="nameList" id="pickerList"></div>
+  </div>
+</div>
+
+<!-- manage names -->
+<div class="overlay" id="mgmtOverlay">
+  <div class="sheet" style="max-height:90vh;">
+    <div class="sheet-head">
+      <div class="t">إدارة الأسماء</div>
+      <button class="close" id="mgmtClose">✕</button>
+    </div>
+    <div class="nameList" id="mgmtList"></div>
+    <div class="mgmtAdd">
+      <input id="mgmtInput" placeholder="اكتب اسم جديد">
+      <button id="mgmtAddBtn">إضافة</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SECTIONS = [
+  {key:'pc', label:'P.C', cls:'pc'},
+  {key:'ninja', label:'نينجر', cls:'ninja'},
+  {key:'fatesh', label:'فاتش', cls:'fatesh'},
+];
+const DEFAULT_NAMES = ["عبد المنعم ربيع","راضى اسماعيل","ابراهيم احمد","محمد سعد","محمد محمود","يوسف محمد جوده","ايهاب احمد","مصطفى معوض","ابراهيم يونس","ابراهيم فتحى","احمد ايهاب","فرحات عبد الرحمن","احمد عماد","احمد يسرى","محمد صبحى","مهند","احمد عبدالفتاح","محمد رفاعى","خالد عثمان","عبدالله ياسر","ابراهيم حسن","يوسف احمد","بلال احمد","عبدالله احمد على","محمد عيسى","يوسف هانى","يوسف صلاح","ابو بكر نصر","محمد هانى","عمرو انور","محمد عبد الحميد","محمد لطفى","مصطفى عباس","عبد الوهاب صلاح","احمد محمود","محمد ايمن","احمد رافت","عبدالله محمد","محمد ياسر","محمد يوسف","اسلام ضاحى","مجدى احمد","طارق للسيد","حماده جمال","السعيد عبدالله","طارق عبد الفتاح","محمود محمد","احمد عبد الرحمن","احمد جمال","ايهاب عبد المجيد","احمد على"];
+const DEFAULT_COUNTS = {pc:20, ninja:12, fatesh:12};
+
+let masterNames = [];
+let slotCounts = {...DEFAULT_COUNTS};
+let currentDate = todayStr();
+let day = null; // {hours, names:{pc:[],ninja:[],fatesh:[]}}
+let activeSlot = null; // {sectionKey, index}
+let saveTimer = null;
+
+function todayStr(){
+  const d = new Date();
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off*60000);
+  return local.toISOString().slice(0,10);
+}
+function fmtDateLabel(str){
+  const d = new Date(str+'T00:00:00');
+  const days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const months = ['يناير','فبراير','مارس','ابريل','مايو','يونيو','يوليو','اغسطس','سبتمبر','اكتوبر','نوفمبر','ديسمبر'];
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+}
+function shiftDate(str, delta){
+  const d = new Date(str+'T00:00:00');
+  d.setDate(d.getDate()+delta);
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off*60000);
+  return local.toISOString().slice(0,10);
+}
+
+async function storageGet(key, fallback){
+  try{
+    const r = await window.storage.get(key);
+    return r ? JSON.parse(r.value) : fallback;
+  }catch(e){ return fallback; }
+}
+async function storageSet(key, value){
+  try{ await window.storage.set(key, JSON.stringify(value)); }catch(e){}
+}
+
+function emptyDay(){
+  const names = {};
+  SECTIONS.forEach(s => names[s.key] = Array(slotCounts[s.key]).fill(''));
+  return {hours:12, names};
+}
+
+async function loadAll(){
+  masterNames = await storageGet('master-names', null);
+  if(!masterNames){ masterNames = [...DEFAULT_NAMES]; await storageSet('master-names', masterNames); }
+  slotCounts = await storageGet('slot-counts', null) || {...DEFAULT_COUNTS};
+  await loadDay(currentDate);
+}
+
+async function loadDay(dateStr){
+  currentDate = dateStr;
+  let d = await storageGet('day:'+dateStr, null);
+  if(!d){
+    d = emptyDay();
+  } else {
+    SECTIONS.forEach(s=>{
+      const cur = d.names[s.key] || [];
+      if(cur.length < slotCounts[s.key]){
+        d.names[s.key] = cur.concat(Array(slotCounts[s.key]-cur.length).fill(''));
+      }
+    });
+  }
+  day = d;
+  render();
+}
+
+async function saveDay(){
+  document.getElementById('saveStatus').textContent = 'جارٍ الحفظ...';
+  await storageSet('day:'+currentDate, day);
+  await storageSet('slot-counts', slotCounts);
+  document.getElementById('saveStatus').textContent = 'محفوظ ✓';
+}
+function queueSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDay, 250);
+}
+
+function allAssignedNames(){
+  let all = [];
+  SECTIONS.forEach(s => day.names[s.key].forEach(n => { if(n) all.push(n); }));
+  return all;
+}
+function duplicateSet(){
+  const all = allAssignedNames();
+  const counts = {};
+  all.forEach(n => counts[n] = (counts[n]||0)+1);
+  return new Set(Object.keys(counts).filter(n => counts[n] > 1));
+}
+
+function render(){
+  document.getElementById('dateLabel').firstChild.textContent = fmtDateLabel(currentDate) + ' ';
+  document.getElementById('dateInput').value = currentDate;
+  document.querySelectorAll('.hourbtn').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.h) === day.hours);
+  });
+
+  const dups = duplicateSet();
+  const warnbar = document.getElementById('warnbar');
+  if(dups.size){
+    warnbar.style.display = 'block';
+    warnbar.textContent = '⚠ في تكرار: ' + [...dups].join(' ، ');
+  } else {
+    warnbar.style.display = 'none';
+  }
+
+  const wrap = document.getElementById('sections');
+  wrap.innerHTML = '';
+  SECTIONS.forEach(s=>{
+    const arr = day.names[s.key];
+    const filledCount = arr.filter(n=>n).length;
+    const sec = document.createElement('div');
+    sec.className = 'section sec ' + s.cls;
+    sec.innerHTML = `
+      <div class="sec-head">
+        <div class="name">${s.label}</div>
+        <div class="count">${filledCount} / ${arr.length}</div>
+      </div>
+      <div class="slots"></div>
+      <div class="addrow"><button class="addBtn" data-add="${s.key}">+ إضافة مكان</button></div>
+    `;
+    const slotsWrap = sec.querySelector('.slots');
+    arr.forEach((name, i)=>{
+      const row = document.createElement('div');
+      row.className = 'slot';
+      const isDup = name && dups.has(name);
+      row.innerHTML = `
+        <div class="num">${i+1}</div>
+        <button class="nameBtn ${name?'filled':''} ${isDup?'dup':''}" data-sec="${s.key}" data-i="${i}">
+          ${name ? name : 'اضغط لاختيار الاسم'}
+        </button>
+        <button class="del" data-del="${s.key}:${i}">🗑</button>
+      `;
+      slotsWrap.appendChild(row);
+    });
+    wrap.appendChild(sec);
+  });
+
+  wrap.querySelectorAll('.nameBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=> openPicker(btn.dataset.sec, Number(btn.dataset.i)));
+  });
+  wrap.querySelectorAll('[data-add]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const key = btn.dataset.add;
+      day.names[key].push('');
+      slotCounts[key] = day.names[key].length;
+      render(); queueSave();
+    });
+  });
+  wrap.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const [key, idx] = btn.dataset.del.split(':');
+      const i = Number(idx);
+      if(day.names[key][i] && !confirm('المكان ده فيه اسم "' + day.names[key][i] + '" — تمسحه؟')) return;
+      day.names[key].splice(i,1);
+      slotCounts[key] = day.names[key].length;
+      render(); queueSave();
+    });
+  });
+}
+
+function openPicker(sectionKey, index){
+  activeSlot = {sectionKey, index};
+  const sLabel = SECTIONS.find(s=>s.key===sectionKey).label;
+  document.getElementById('pickerTitle').textContent = `${sLabel} — مكان رقم ${index+1}`;
+  document.getElementById('pickerSearch').value = '';
+  renderPickerList('');
+  document.getElementById('pickerOverlay').style.display = 'flex';
+  setTimeout(()=>document.getElementById('pickerSearch').focus(), 50);
+}
+function renderPickerList(filter){
+  const list = document.getElementById('pickerList');
+  list.innerHTML = '';
+  const current = day.names[activeSlot.sectionKey][activeSlot.index];
+  if(current){
+    const clearRow = document.createElement('div');
+    clearRow.className = 'nameRow clearRow';
+    clearRow.textContent = '✕ إفراغ المكان ده';
+    clearRow.addEventListener('click', ()=>{
+      day.names[activeSlot.sectionKey][activeSlot.index] = '';
+      closePicker(); render(); queueSave();
+    });
+    list.appendChild(clearRow);
+  }
+  const taken = new Set(allAssignedNames());
+  const f = filter.trim();
+  const names = masterNames.filter(n => !f || n.includes(f));
+  if(!names.length){
+    list.innerHTML += '<div class="empty-hint">مفيش اسم بالشكل ده — جرب تضيفه من "تعديل الأسماء"</div>';
+    return;
+  }
+  names.forEach(n=>{
+    const row = document.createElement('div');
+    const isTaken = taken.has(n) && n !== current;
+    row.className = 'nameRow' + (isTaken ? ' taken' : '');
+    row.innerHTML = `<span>${n}</span>${isTaken?'<span class="tag">واقف مكان تانى</span>':''}`;
+    row.addEventListener('click', ()=>{
+      day.names[activeSlot.sectionKey][activeSlot.index] = n;
+      closePicker(); render(); queueSave();
+    });
+    list.appendChild(row);
+  });
+}
+function closePicker(){
+  document.getElementById('pickerOverlay').style.display = 'none';
+  activeSlot = null;
+}
+
+function renderMgmt(){
+  const list = document.getElementById('mgmtList');
+  list.innerHTML = '';
+  masterNames.forEach((n, i)=>{
+    const row = document.createElement('div');
+    row.className = 'mgmtRow';
+    row.innerHTML = `<span>${n}</span><button data-rm="${i}">🗑</button>`;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('[data-rm]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const i = Number(btn.dataset.rm);
+      if(!confirm('تمسح "' + masterNames[i] + '" من قائمة الأسماء؟')) return;
+      masterNames.splice(i,1);
+      await storageSet('master-names', masterNames);
+      renderMgmt(); render();
+    });
+  });
+}
+
+document.getElementById('prevDay').addEventListener('click', ()=> loadDay(shiftDate(currentDate,-1)));
+document.getElementById('nextDay').addEventListener('click', ()=> loadDay(shiftDate(currentDate,1)));
+document.getElementById('dateInput').addEventListener('change', e=> loadDay(e.target.value));
+
+document.querySelectorAll('.hourbtn').forEach(b=>{
+  b.addEventListener('click', ()=>{ day.hours = Number(b.dataset.h); render(); queueSave(); });
+});
+
+document.getElementById('pickerClose').addEventListener('click', closePicker);
+document.getElementById('pickerOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'pickerOverlay') closePicker();
+});
+document.getElementById('pickerSearch').addEventListener('input', e=> renderPickerList(e.target.value));
+
+document.getElementById('manageBtn').addEventListener('click', ()=>{
+  renderMgmt();
+  document.getElementById('mgmtOverlay').style.display = 'flex';
+});
+document.getElementById('mgmtClose').addEventListener('click', ()=>{
+  document.getElementById('mgmtOverlay').style.display = 'none';
+});
+document.getElementById('mgmtOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'mgmtOverlay') document.getElementById('mgmtOverlay').style.display = 'none';
+});
+document.getElementById('mgmtAddBtn').addEventListener('click', async ()=>{
+  const inp = document.getElementById('mgmtInput');
+  const v = inp.value.trim();
+  if(!v) return;
+  if(masterNames.includes(v)){ alert('الاسم ده موجود بالفعل'); return; }
+  masterNames.push(v);
+  await storageSet('master-names', masterNames);
+  inp.value = '';
+  renderMgmt();
+});
+
+document.getElementById('exportBtn').addEventListener('click', exportToExcel);
+
+async function exportToExcel(){
+  const btn = document.getElementById('exportBtn');
+  const orig = btn.textContent;
+  btn.textContent = 'جارٍ التجهيز...';
+  try{
+    const wb = new ExcelJS.Workbook();
+
+    // Sheet 1: قائمة العمال
+    const ws1 = wb.addWorksheet('قائمة العمال', {views:[{rightToLeft:true}]});
+    ws1.columns = [{width:6},{width:28}];
+    ws1.getCell('A1').value = 'م';
+    ws1.getCell('B1').value = 'اسم العامل';
+    ['A1','B1'].forEach(ref=>{
+      const c = ws1.getCell(ref);
+      c.font = {name:'Arial', bold:true, color:{argb:'FFFFFFFF'}};
+      c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF29ABE2'}};
+      c.alignment = {horizontal:'center', vertical:'middle'};
+      c.border = thinBorder();
+    });
+    masterNames.forEach((n,i)=>{
+      const r = i+2;
+      ws1.getCell('A'+r).value = i+1;
+      ws1.getCell('B'+r).value = n;
+      ws1.getCell('A'+r).alignment = {horizontal:'center'};
+      ws1.getCell('B'+r).alignment = {horizontal:'right'};
+      ws1.getCell('A'+r).font = {name:'Arial'};
+      ws1.getCell('B'+r).font = {name:'Arial'};
+      ws1.getCell('A'+r).border = thinBorder();
+      ws1.getCell('B'+r).border = thinBorder();
+    });
+
+    // Sheet 2: شفت اليوم
+    const ws2 = wb.addWorksheet('شفت اليوم', {views:[{rightToLeft:true}]});
+    const colMap = {pc:['B','C'], ninja:['E','F'], fatesh:['H','I']};
+    const colorMap = {pc:'FFDCE8F5', ninja:'FFFBE3D4', fatesh:'FFFFF4B8'};
+    const borderColorMap = {pc:'FF9CC0E0', ninja:'FFE6A878', fatesh:'FFE0C95A'};
+    ws2.columns = [{width:3},{width:6},{width:24},{width:3},{width:6},{width:24},{width:3},{width:6},{width:24}];
+
+    ws2.mergeCells('A2:I2');
+    const title = ws2.getCell('A2');
+    title.value = `توزيعة الورديه   شغل ${day.hours} ساعه   —   ${fmtDateLabel(currentDate)}`;
+    title.font = {name:'Arial', bold:true, size:14, color:{argb:'FFFFFFFF'}};
+    title.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF29ABE2'}};
+    title.alignment = {horizontal:'center', vertical:'middle'};
+    ws2.getRow(2).height = 26;
+
+    const dups = duplicateSet();
+
+    SECTIONS.forEach(s=>{
+      const [c1,c2] = colMap[s.key];
+      ws2.mergeCells(`${c1}3:${c2}3`);
+      const head = ws2.getCell(`${c1}3`);
+      head.value = s.label;
+      head.font = {name:'Arial', bold:true, size:12};
+      head.fill = {type:'pattern', pattern:'solid', fgColor:{argb:colorMap[s.key]}};
+      head.alignment = {horizontal:'center', vertical:'middle'};
+      head.border = thinBorder();
+      ws2.getCell(`${c2}3`).border = thinBorder();
+
+      const hNum = ws2.getCell(`${c1}4`);
+      hNum.value = 'م';
+      const hName = ws2.getCell(`${c2}4`);
+      hName.value = 'الاسم';
+      [hNum,hName].forEach(c=>{
+        c.font = {name:'Arial', bold:true};
+        c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:colorMap[s.key]}};
+        c.alignment = {horizontal:'center', vertical:'middle'};
+        c.border = thinBorder();
+      });
+
+      day.names[s.key].forEach((name,i)=>{
+        const r = 5+i;
+        const nc = ws2.getCell(`${c1}${r}`);
+        nc.value = i+1;
+        nc.font = {name:'Arial'};
+        nc.alignment = {horizontal:'center'};
+        nc.border = thinBorder();
+        const sc = ws2.getCell(`${c2}${r}`);
+        sc.value = name || '';
+        sc.font = {name:'Arial', bold:!!(name && dups.has(name)), color:{argb:(name && dups.has(name))?'FFFFFFFF':'FF000000'}};
+        sc.alignment = {horizontal:'right'};
+        sc.border = thinBorder();
+        sc.fill = {type:'pattern', pattern:'solid', fgColor:{argb:(name && dups.has(name)) ? 'FFC1483C' : colorMap[s.key]}};
+      });
+    });
+
+    function thinBorder(){
+      return {top:{style:'thin',color:{argb:'FF999999'}}, bottom:{style:'thin',color:{argb:'FF999999'}},
+        left:{style:'thin',color:{argb:'FF999999'}}, right:{style:'thin',color:{argb:'FF999999'}}};
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `شفت_${currentDate}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }catch(e){
+    alert('حصلت مشكلة في التصدير: ' + e.message);
+  }finally{
+    btn.textContent = orig;
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>
