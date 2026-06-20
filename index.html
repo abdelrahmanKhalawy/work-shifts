@@ -115,6 +115,17 @@
         border-color: #fff;
       }
 
+      #totalBar {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 20px;
+        padding: 6px 10px;
+      }
+
       #warnbar {
         display: none;
         background: #fce8e6;
@@ -392,6 +403,14 @@
         font-size: 15px;
         font-weight: 600;
       }
+      .mgmtRow .tag {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: #1f7a4d;
+        background: #dcf3e4;
+        padding: 3px 8px;
+        border-radius: 20px;
+      }
       .mgmtRow button {
         background: none;
         border: none;
@@ -415,6 +434,7 @@
         <button class="hourbtn" data-h="8">شفت 8 ساعات</button>
         <button class="hourbtn" data-h="12">شفت 12 ساعة</button>
       </div>
+      <div id="totalBar"></div>
     </header>
 
     <div id="warnbar"></div>
@@ -637,10 +657,13 @@
               .collection(COLLECTION)
               .doc(key)
               .set({ value, updatedAt: Date.now() });
+            return true; // نجح الحفظ في الكلاود فعليًا
           } catch (e) {
             console.warn("Firestore save failed, saved locally only:", e);
+            return false;
           }
         }
+        return false;
       }
 
       function watchKey(key, onChange) {
@@ -727,14 +750,21 @@
       async function saveDay() {
         document.getElementById("saveStatus").textContent = "جارٍ الحفظ...";
         isSavingLocally = true;
-        await storageSet("day:" + currentDate, day);
-        await storageSet("slot-counts", slotCounts);
+        const ok1 = await storageSet("day:" + currentDate, day);
+        const ok2 = await storageSet("slot-counts", slotCounts);
         setTimeout(() => {
           isSavingLocally = false;
         }, 600); // وقت كافي لرجوع الـ snapshot بتاعنا
-        document.getElementById("saveStatus").textContent = firebaseReady
-          ? "متصل ✓ (مشترك بين الأجهزة)"
-          : "محفوظ محليًا فقط ⚠";
+        if (firebaseReady && ok1 && ok2) {
+          document.getElementById("saveStatus").textContent =
+            "متصل ✓ (مشترك بين الأجهزة)";
+        } else if (firebaseReady) {
+          document.getElementById("saveStatus").textContent =
+            "محفوظ محليًا فقط (فشل الاتصال بالسيرفر) ⚠";
+        } else {
+          document.getElementById("saveStatus").textContent =
+            "محفوظ محليًا فقط ⚠";
+        }
       }
       function queueSave() {
         clearTimeout(saveTimer);
@@ -774,17 +804,27 @@
           warnbar.style.display = "none";
         }
 
+        // عداد إجمالي: كام عامل اتوزع من إجمالي العمال المسجلين
+        const totalAssigned = allAssignedNames().length;
+        const totalNeeded = SECTIONS.reduce(
+          (sum, s) => sum + day.names[s.key].length,
+          0,
+        );
+        document.getElementById("totalBar").textContent =
+          `تم توزيع ${totalAssigned} من ${totalNeeded} مكان  •  باقي ${Math.max(totalNeeded - totalAssigned, 0)} مكان فاضي`;
+
         const wrap = document.getElementById("sections");
         wrap.innerHTML = "";
         SECTIONS.forEach((s) => {
           const arr = day.names[s.key];
           const filledCount = arr.filter((n) => n).length;
+          const isComplete = filledCount === arr.length && arr.length > 0;
           const sec = document.createElement("div");
           sec.className = "section sec " + s.cls;
           sec.innerHTML = `
       <div class="sec-head">
         <div class="name">${s.label}</div>
-        <div class="count">${filledCount} / ${arr.length}</div>
+        <div class="count">${filledCount} / ${arr.length} ${isComplete ? "✓" : ""}</div>
       </div>
       <div class="slots"></div>
       <div class="addrow"><button class="addBtn" data-add="${s.key}">+ إضافة مكان</button></div>
@@ -897,17 +937,28 @@
       function renderMgmt() {
         const list = document.getElementById("mgmtList");
         list.innerHTML = "";
+        const usedToday = new Set(allAssignedNames());
         masterNames.forEach((n, i) => {
           const row = document.createElement("div");
           row.className = "mgmtRow";
-          row.innerHTML = `<span>${n}</span><button data-rm="${i}">🗑</button>`;
+          const badge = usedToday.has(n)
+            ? '<span class="tag" style="margin-right:8px;">شغال النهاردة</span>'
+            : "";
+          row.innerHTML = `<span>${n}${badge}</span><button data-rm="${i}">🗑</button>`;
           list.appendChild(row);
         });
         list.querySelectorAll("[data-rm]").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const i = Number(btn.dataset.rm);
-            if (!confirm('تمسح "' + masterNames[i] + '" من قائمة الأسماء؟'))
-              return;
+            const name = masterNames[i];
+            let msg = 'تمسح "' + name + '" من قائمة الأسماء؟';
+            if (usedToday.has(name)) {
+              msg =
+                'تنبيه: "' +
+                name +
+                '" شغال حاليًا في توزيعة النهاردة.\nلو مسحته من القائمة هيفضل مكتوب في مكانه لكن مش هتقدر تختاره تاني لو فضيت المكان.\n\nتمسحه برضه؟';
+            }
+            if (!confirm(msg)) return;
             masterNames.splice(i, 1);
             await storageSet("master-names", masterNames);
             renderMgmt();
@@ -957,27 +1008,41 @@
         if (e.target.id === "mgmtOverlay")
           document.getElementById("mgmtOverlay").style.display = "none";
       });
+      async function addNewMgmtName() {
+        const inp = document.getElementById("mgmtInput");
+        const v = inp.value.trim().replace(/\s+/g, " "); // تنضيف المسافات الزيادة جوه الاسم
+        if (!v) return;
+        if (masterNames.includes(v)) {
+          alert("الاسم ده موجود بالفعل");
+          return;
+        }
+        masterNames.push(v);
+        await storageSet("master-names", masterNames);
+        inp.value = "";
+        renderMgmt();
+        inp.focus();
+      }
       document
         .getElementById("mgmtAddBtn")
-        .addEventListener("click", async () => {
-          const inp = document.getElementById("mgmtInput");
-          const v = inp.value.trim();
-          if (!v) return;
-          if (masterNames.includes(v)) {
-            alert("الاسم ده موجود بالفعل");
-            return;
-          }
-          masterNames.push(v);
-          await storageSet("master-names", masterNames);
-          inp.value = "";
-          renderMgmt();
-        });
+        .addEventListener("click", addNewMgmtName);
+      document.getElementById("mgmtInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addNewMgmtName();
+      });
 
       document
         .getElementById("exportBtn")
         .addEventListener("click", exportToExcel);
 
       async function exportToExcel() {
+        const dupsCheck = duplicateSet();
+        if (dupsCheck.size) {
+          const ok = confirm(
+            "⚠ في تكرار في الأسماء: " +
+              [...dupsCheck].join(" ، ") +
+              "\n\nتصدر الملف برغم ده؟",
+          );
+          if (!ok) return;
+        }
         const btn = document.getElementById("exportBtn");
         const orig = btn.textContent;
         btn.textContent = "جارٍ التجهيز...";
